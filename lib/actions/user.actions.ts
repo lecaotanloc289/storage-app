@@ -15,10 +15,11 @@
 */
 
 import { ID, Query } from "node-appwrite";
-import { createAdminClient } from "../appwrite";
+import { createAdminClient, createSessionClient } from "../appwrite";
 import { appwriteConfig } from "../appwrite/config";
 import { parseStringify } from "../utils";
 import { cookies } from "next/headers";
+import { avatarPlaceholderUrl } from "@/constants";
 
 const handleError = (error: unknown, message: string) => {
   console.log(error, message);
@@ -64,8 +65,7 @@ export const createAccount = async ({
       data: {
         fullName,
         email,
-        avatar:
-          "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEAAkGBwoNEA8NDQ4NDQ0NDQ4NCA0NDQ8NDQ8PFREWFhURFRYYHSggGBolHRUTITEhJSkrLi4uFx8zRDMvNygtLisBCgoKDQ0NFQ0NDysZFRkrKy0rKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrK//AABEIAOAA4QMBIgACEQEDEQH/xAAaAAEBAAMBAQAAAAAAAAAAAAAAAQMEBQIH/8QAMBABAQABAgIHBwQDAQAAAAAAAAECAwQRMRIhQVFxkdEUIjJhgaHBQlKCsWJy8AX/xAAVAQEBAAAAAAAAAAAAAAAAAAAAAf/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/APreKpFAAAAAAAAAAAAAAAAAAAAAAAAAAAABIqRQAAAAAAAAAAAAAAAAAAAAAAAAAAAASKkUAAAAAAALXm0HrinFADicQAABZV4vID0JKvEAAAAAAAAAAHmPSRQAAAACiUEAABk0tHLPly7beQMY3sNphOfHL7Rlmhp/tx8oDmDp3R0/24+UY89pp3lxngDQGXW2+WHXznfGIBUAeoJKoAAAAAAAAJFSKAAAABXmrUAABl2+j078pz9HRxxk6p1TseNHT6OMnb+rxZAAAAALGhutDo9c+G/at95zxmUsvKg5QuUstl5y8KgD1HmLKCgAAAAAAAkV5j0AAAACVCgDJt8eOWPjx8mNn2U97+NBvqAAAAAAAOfvMeGXjJWBtb+dePhfw1QFRRFAFAAAAAASKkUAAAAHmhQBsbH4r/rf7jXZtplwynz6gdESKAAAAAADT/8AQ/T9fw1Gzvsve4d0awCooigCgAAAAAJFSKAAAACVFqALLw/CAOpp5zKSztj20NprdG9G8ry+VbwKAAAAlsnXeU66rT3ut+ifz9Aa2pl0rb315ABUUFAAAAAAABIqRQAAEOKcQKAACANrbbnh7uXLsvc1QHWll651zsVysM8seVs8GabzU+V8YDfOLQu81P8AGfSsWpqZ5fFbfl2A2txu5yw6725d3g00AUABUAepR5epQAAAAAASK8x64gJQoJaAADNo7fLPr5Tv9AYXvHSzvLG/1G/p6GGPKcb33rrKDnzZ6nyn1PY9Tvx876OgA5/sWp34+d9D2LU78fO+joAOf7Fqd+PnfQ9i1O/Hzvo6ADn+x6nfj530PY9T/HzdABzMtDUnPG/Tr/pjddj1NHDLnPryoOYNjW2uWPXPen3a4CoA9SiLKACcQXiJxUEgiggAAM+00eleleU+9B72224+9lOr9M9W5FAAAAAAAAAAAAAGrudtx97Hn2zvbQDkDb3mjw9+fz9WoAqALxAEAAQAUABcZbZJzt4R09PCYySdjT2WHHLj+2fe/wDVvgAAAAAAAAAAAAAAAAlkvVeV5uXq4dG2d3LwdVp7/Dll9L+PyDUABRFEAAQAUABu7GdVvffw2mvsvh+tbAAAAAAAAAAAAAAAAADBvJxwvysv3Z2LdfBl4A5oAAAAAAAAAN/ZfD9a2Grscuq4914toAAAAAAAAAAAAAAAABi3PwZeDK197nwx4duVkgNAAAAAAH//2Q==",
+        avatar: avatarPlaceholderUrl,
         accountId,
       },
     });
@@ -93,4 +93,17 @@ export const verifySecret = async ({
   } catch (error) {
     handleError(error, "Failed to verify OTP");
   }
+};
+
+export const getCurrentUser = async () => {
+  const { database, account } = await createSessionClient();
+  const result = await account.get();
+  const user = await database.listDocuments({
+    databaseId: appwriteConfig.database,
+    collectionId: "user",
+    queries: [Query.equal("accountId", [result.$id])],
+  });
+
+  if (user.total <= 0) return null;
+  return parseStringify(user.documents[0]);
 };
