@@ -28,7 +28,7 @@ const handleError = (error: unknown, message: string) => {
   throw error;
 };
 
-const getUserByEmail = async (email: string) => {
+export const getUserByEmail = async (email: string) => {
   const { database } = await createAdminClient();
   const result = await database.listDocuments({
     databaseId: appwriteConfig.database,
