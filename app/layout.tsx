@@ -10,7 +10,7 @@ const poppins = Poppins({
 
 export const metadata: Metadata = {
   title: "Storage App",
-  description: "Storage app - The on ly storage solution you need",
+  description: "Storage app - The only storage solution you need",
 };
 
 export default function RootLayout({
