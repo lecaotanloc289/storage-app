@@ -16,7 +16,6 @@ const Thumbnail = ({
   imageClassName,
 }: Props) => {
   const isImage = type === "image" && extension !== "svg";
-
   return (
     <figure className={cn("thumbnail", className)}>
       <Image

@@ -74,3 +74,23 @@ declare interface ShareInputProps {
   onInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onRemove: (email: string) => void;
 }
+
+declare interface FileDocument {
+  $id: string;
+  $databaseId: string;
+  $collectionId: string;
+  $createdAt: string; // ISO date string
+  $updatedAt: string; // ISO date string
+  $permissions: string[];
+  $sequence: number;
+
+  accountId: string;
+  bucketFileId: string;
+  extension: string;
+  name: string;
+  owner: string;
+  size: number;
+  type: "document" | "image" | "video" | "audio" | string;
+  url: string;
+  users?: string[]; // vì hiện tại bạn để trống
+}
