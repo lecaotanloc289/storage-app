@@ -21,7 +21,6 @@ import { parseStringify } from "../utils";
 import { cookies } from "next/headers";
 import { avatarPlaceholderUrl } from "@/constants";
 import { redirect } from "next/navigation";
-import { parse } from "path";
 
 const handleError = (error: unknown, message: string) => {
   console.log(error, message);

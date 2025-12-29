@@ -122,3 +122,67 @@ export const getFiles = async () => {
     handleError(error, "Failed to get files");
   }
 };
+
+export const renameFile = async ({
+  fileId,
+  name,
+  extension,
+  path,
+}: RenameFileProps) => {
+  const { database } = await createAdminClient();
+  try {
+    const newName = `${name}.${extension}`;
+    const updatedFile = await database.updateDocument(
+      appwriteConfig.database,
+      appwriteConfig.file_collection,
+      fileId,
+      { name: newName },
+    );
+    revalidatePath(path);
+    return parseStringify(updatedFile);
+  } catch (error) {
+    handleError(error, "Failed to rename file");
+  }
+};
+
+export const updateFileUsers = async ({
+  fileId,
+  emails,
+  path,
+}: UpdateFileUsersProps) => {
+  const { database } = await createAdminClient();
+  try {
+    const updatedFile = await database.updateDocument(
+      appwriteConfig.database,
+      appwriteConfig.file_collection,
+      fileId,
+      { users: emails },
+    );
+    revalidatePath(path);
+    return parseStringify(updatedFile);
+  } catch (error) {
+    handleError(error, "Failed to share file");
+  }
+};
+
+export const deleteFile = async ({
+  fileId,
+  bucketFileId,
+  path,
+}: DeleteFileProps) => {
+  const { database, storage } = await createAdminClient();
+  try {
+    const deleteFile = await database.deleteDocument(
+      appwriteConfig.database,
+      appwriteConfig.file_collection,
+      fileId,
+    );
+    if (deleteFile) {
+      await storage.deleteFile(appwriteConfig.storage, bucketFileId);
+    }
+    revalidatePath(path);
+    return parseStringify({ status: "Success" });
+  } catch (error) {
+    handleError(error, "Failed to delete file");
+  }
+};
