@@ -21,14 +21,13 @@ import { parseStringify } from "../utils";
 import { cookies } from "next/headers";
 import { avatarPlaceholderUrl } from "@/constants";
 import { redirect } from "next/navigation";
-import { parse } from "path";
 
 const handleError = (error: unknown, message: string) => {
   console.log(error, message);
   throw error;
 };
 
-const getUserByEmail = async (email: string) => {
+export const getUserByEmail = async (email: string) => {
   const { database } = await createAdminClient();
   const result = await database.listDocuments({
     databaseId: appwriteConfig.database,
@@ -98,16 +97,21 @@ export const verifySecret = async ({
 };
 
 export const getCurrentUser = async () => {
-  const { database, account } = await createSessionClient();
-  const result = await account.get();
-  const user = await database.listDocuments({
-    databaseId: appwriteConfig.database,
-    collectionId: "user",
-    queries: [Query.equal("accountId", [result.$id])],
-  });
+  try {
+    const { database, account } = await createSessionClient();
+    const result = await account.get();
+    const user = await database.listDocuments({
+      databaseId: appwriteConfig.database,
+      collectionId: "user",
+      queries: [Query.equal("accountId", [result.$id])],
+    });
 
-  if (user.total <= 0) return null;
-  return parseStringify(user.documents[0]);
+    if (user.total <= 0) return null;
+    return parseStringify(user.documents[0]);
+  } catch (error) {
+    handleError(error, "Failed to get current user");
+  }
+  
 };
 
 export const signOutUser = async () => {
