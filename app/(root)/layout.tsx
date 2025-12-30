@@ -4,7 +4,7 @@ import SideBar from "@/components/SideBar";
 import { getCurrentUser } from "@/lib/actions/user.actions";
 import { redirect } from "next/navigation";
 import React from "react";
-
+export const dynamic = "force-dynamic";
 const layout = async ({ children }: { children: React.ReactNode }) => {
   const currentUser = await getCurrentUser();
   if (!currentUser) return redirect("/sign-in");
