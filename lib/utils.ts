@@ -193,14 +193,24 @@ export const getFileIcon = (
   }
 };
 
-// APPWRITE URL UTILS
-// Construct appwrite file URL - https://appwrite.io/docs/apis/rest#images
-export const constructFileUrl = (bucketFileId: string) => {
-  return `${process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT}/storage/buckets/${process.env.NEXT_PUBLIC_APPWRITE_BUCKET}/files/${bucketFileId}/view?project=${process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID}`;
+// R2 FILE URL UTILS
+// Files are served (privately, authed) through the app's own route:
+//   /api/files/<ownerId>/<uuid>/<filename>
+// The R2 key contains slashes, so we keep the segment separators but encode each
+// segment individually — this both routes to the `[...key]` catch-all and keeps
+// spaces / unicode filenames safe (the route decodes each segment).
+const encodeR2Key = (r2Key: string) =>
+  r2Key
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+
+export const constructFileUrl = (r2Key: string) => {
+  return `/api/files/${encodeR2Key(r2Key)}`;
 };
 
-export const constructDownloadUrl = (bucketFileId: string) => {
-  return `${process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT}/storage/buckets/${process.env.NEXT_PUBLIC_APPWRITE_BUCKET}/files/${bucketFileId}/download?project=${process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID}`;
+export const constructDownloadUrl = (r2Key: string) => {
+  return `/api/files/${encodeR2Key(r2Key)}?download=1`;
 };
 
 // DASHBOARD UTILS

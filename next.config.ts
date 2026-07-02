@@ -10,22 +10,9 @@ const nextConfig: NextConfig = {
     },
   },
   /* config options here */
-  images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "*",
-      },
-      {
-        protocol: "https",
-        hostname: "cloud.appwrite.io",
-      },
-      {
-        protocol: "https",
-        hostname: "syd.cloud.appwrite.io",
-      },
-    ],
-  },
+  // Files are now served from the app's own origin (`/api/files/...`) and
+  // avatars are inlined data URIs — both are allowed by `next/image` without any
+  // `remotePatterns` entry, so no external image hosts are configured.
 };
 
 export default nextConfig;
