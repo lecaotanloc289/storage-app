@@ -1,0 +1,43 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "storage-app",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2025-06-01",
+  "compatibility_flags": [
+    "nodejs_compat",
+    "global_fetch_strictly_public"
+  ],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "storage-app"
+    }
+  ],
+  // D1 database (auth + app tables) — filled by Task 1 / real ID from Cloudflare
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "storage-app-db",
+      "database_id": "PLACEHOLDER_D1_ID",
+      "migrations_dir": "drizzle"
+    }
+  ],
+  // R2 bucket (file storage) — filled by Task 4
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      "bucket_name": "storage-app-files"
+    }
+  ],
+  // KV namespace for OpenNext incremental cache — real ID from Cloudflare
+  "kv_namespaces": [
+    {
+      "binding": "NEXT_INC_CACHE_KV",
+      "id": "PLACEHOLDER_KV_ID"
+    }
+  ]
+}
