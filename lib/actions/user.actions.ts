@@ -1,26 +1,26 @@
 "use server";
 
-// Flow for create account
-/* 
-1. User enters fullname and email
-2. Check if the user already exist using the email (we will use this 
-    to identify if we still need to create a user document or not)
-3. Send OTP to user's email
-4. This will send a secret key for creating a session. The secret key 
-    or OPT will be sent to the user's account email. If the user's auth
-    account has 
-5. Create a new user document if the user is a new user.
-6. Return the user's accountId that will be use to complete the login process later with the OTP
-7. Verify OTP and authenticate to login
+/*
+Auth flow (better-auth + email OTP):
+1. User enters full name + email (sign-up) or just email (sign-in).
+2. We send a 6-digit OTP to the email via Resend (better-auth `emailOTP` plugin).
+3. On sign-in we first check the user exists so we keep the old
+   "User not found" UX; sign-up creates the user on verification.
+4. User enters the OTP → `verifySecret` verifies it, better-auth creates the
+   session and (via the `nextCookies` plugin) sets the session cookie.
+5. `getCurrentUser` reads the session and maps it to the shape the UI expects.
 */
 
-import { ID, Query } from "node-appwrite";
-import { createAdminClient, createSessionClient } from "../appwrite";
-import { appwriteConfig } from "../appwrite/config";
-import { parseStringify } from "../utils";
-import { cookies } from "next/headers";
-import { avatarPlaceholderUrl } from "@/constants";
+import { eq } from "drizzle-orm";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+
+import { avatarPlaceholderUrl } from "@/constants";
+
+import { getAuth } from "../auth";
+import { getDb } from "../db";
+import { user } from "../db/schema";
+import { parseStringify } from "../utils";
 
 const handleError = (error: unknown, message: string) => {
   console.log(error, message);
@@ -28,20 +28,17 @@ const handleError = (error: unknown, message: string) => {
 };
 
 export const getUserByEmail = async (email: string) => {
-  const { database } = await createAdminClient();
-  const result = await database.listDocuments({
-    databaseId: appwriteConfig.database,
-    collectionId: "user",
-    queries: [Query.equal("email", [email])],
-  });
-  return result.total > 0 ? result.documents[0] : null;
+  const db = getDb();
+  const rows = await db.select().from(user).where(eq(user.email, email)).limit(1);
+  return rows.length > 0 ? rows[0] : null;
 };
 
 export const sendEmailOTP = async ({ email }: { email: string }) => {
-  const { account } = await createAdminClient();
   try {
-    const session = await account.createEmailToken(ID.unique(), email);
-    return session.userId;
+    await getAuth().api.sendVerificationOTP({
+      body: { email, type: "sign-in" },
+    });
+    return parseStringify({ success: true });
   } catch (error) {
     handleError(error, "Failed to send email OTP");
   }
@@ -54,43 +51,68 @@ export const createAccount = async ({
   fullName: string;
   email: string;
 }) => {
-  const existingUser = await getUserByEmail(email);
-  const accountId = await sendEmailOTP({ email });
-  if (!accountId) throw new Error("Failed to send an OTP");
-  if (!existingUser) {
-    const { database } = await createAdminClient();
-    await database.createDocument({
-      databaseId: appwriteConfig.database,
-      collectionId: "user",
-      documentId: ID.unique(),
-      data: {
-        fullName,
-        email,
-        avatar: avatarPlaceholderUrl,
-        accountId,
-      },
+  try {
+    await getAuth().api.sendVerificationOTP({
+      body: { email, type: "sign-in" },
     });
+    // `accountId` is kept for UI parity: AuthForm uses its truthiness to open
+    // the OTP modal. The real user row is created on verification.
+    return parseStringify({ accountId: email });
+  } catch (error) {
+    handleError(error, "Failed to create account");
   }
-  return parseStringify({ accountId });
+};
+
+export const signInUser = async ({ email }: { email: string }) => {
+  try {
+    const existingUser = await getUserByEmail(email);
+    if (!existingUser) {
+      return parseStringify({ accountId: null, message: "User not found" });
+    }
+    await getAuth().api.sendVerificationOTP({
+      body: { email, type: "sign-in" },
+    });
+    return parseStringify({ accountId: email });
+  } catch (error) {
+    handleError(error, "Failed to sign in user");
+  }
 };
 
 export const verifySecret = async ({
-  accountId,
+  email,
   password,
+  fullName,
 }: {
-  accountId: string;
-  password: string;
+  email: string;
+  password: string; // the OTP code entered by the user
+  fullName?: string; // present only for the sign-up flow
 }) => {
   try {
-    const { account } = await createAdminClient();
-    const session = await account.createSession(accountId, password);
-    (await cookies()).set("appwrite-session", session.secret, {
-      path: "/",
-      httpOnly: true,
-      sameSite: "strict",
-      secure: true,
+    // Verifies the OTP and creates the session. `nextCookies()` (last plugin in
+    // lib/auth.ts) auto-applies the Set-Cookie for this server action.
+    const result = await getAuth().api.signInEmailOTP({
+      body: {
+        email,
+        otp: password,
+        // On first sign-in this creates the user with these fields.
+        ...(fullName
+          ? { name: fullName, image: avatarPlaceholderUrl }
+          : {}),
+      },
+      headers: await headers(),
     });
-    return parseStringify({ sessionId: session.$id });
+
+    // better-auth emailOTP is email-only; make sure the sign-up full name is
+    // persisted onto the user row even if it already existed without a name.
+    if (fullName) {
+      const db = getDb();
+      await db
+        .update(user)
+        .set({ name: fullName, updatedAt: new Date() })
+        .where(eq(user.email, email));
+    }
+
+    return parseStringify({ sessionId: result?.token ?? "session" });
   } catch (error) {
     handleError(error, "Failed to verify OTP");
   }
@@ -98,43 +120,31 @@ export const verifySecret = async ({
 
 export const getCurrentUser = async () => {
   try {
-    const { database, account } = await createSessionClient();
-    const result = await account.get();
-    const user = await database.listDocuments({
-      databaseId: appwriteConfig.database,
-      collectionId: "user",
-      queries: [Query.equal("accountId", [result.$id])],
+    const session = await getAuth().api.getSession({
+      headers: await headers(),
     });
+    if (!session?.user) return null;
 
-    if (user.total <= 0) return null;
-    return parseStringify(user.documents[0]);
+    const u = session.user;
+    // Map better-auth user → the Appwrite-shaped doc the UI depends on.
+    return parseStringify({
+      $id: u.id,
+      accountId: u.id,
+      fullName: u.name,
+      email: u.email,
+      avatar: u.image ?? avatarPlaceholderUrl,
+    });
   } catch (error) {
-    handleError(error, "Failed to get current user");
+    console.log(error, "Failed to get current user");
+    return null;
   }
-  
 };
 
 export const signOutUser = async () => {
-  const { account } = await createAdminClient();
   try {
-    await account.deleteSession("current");
-    (await cookies()).delete("appwrite-session");
+    await getAuth().api.signOut({ headers: await headers() });
   } catch (error) {
-    handleError(error, "Failed to sign out user");
-  } finally {
-    redirect("/sign-in");
+    console.log(error, "Failed to sign out user");
   }
-};
-
-export const signInUser = async ({ email }: { email: string }) => {
-  try {
-    const existingUser = await getUserByEmail(email);
-    if (existingUser) {
-      const accountId = await sendEmailOTP({ email });
-      return parseStringify({ accountId });
-    }
-    return parseStringify({ accountId: null, message: "User not found" });
-  } catch (error) {
-    handleError(error, "Failed to sign in user");
-  }
+  redirect("/sign-in");
 };

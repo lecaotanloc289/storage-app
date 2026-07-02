@@ -20,10 +20,10 @@ import { sendEmailOTP, verifySecret } from "@/lib/actions/user.actions";
 import { useRouter } from "next/navigation";
 const OTPModal = ({
   email,
-  accountId,
+  fullName,
 }: {
   email: string;
-  accountId: string;
+  fullName?: string;
 }) => {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(true);
@@ -34,7 +34,7 @@ const OTPModal = ({
     e.preventDefault();
     setIsLoading(true);
     try {
-      const sessionId = await verifySecret({ accountId, password });
+      const sessionId = await verifySecret({ email, password, fullName });
       if (sessionId) {
         router.push("/");
       }
