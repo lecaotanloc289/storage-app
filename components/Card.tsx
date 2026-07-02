@@ -2,7 +2,6 @@ import Link from "next/link";
 import Thumbnail from "./Thumbnail";
 import { convertFileSize } from "@/lib/utils";
 import FormattedDateTime from "./FormattedDateTime";
-import { Models } from "node-appwrite";
 import ActionDropdown from "./ActionDropdown";
 // FileDocument
 const Card = ({ file }: { file: FileDocument }) => {

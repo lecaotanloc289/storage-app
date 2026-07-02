@@ -14,12 +14,12 @@ import { integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core"
 
 export const user = sqliteTable("user", {
   id: text("id").primaryKey(),
-  name: text("name").notNull(), // old Appwrite `fullName`
+  name: text("name").notNull(), // maps to legacy `fullName`
   email: text("email").notNull().unique(),
   emailVerified: integer("email_verified", { mode: "boolean" })
     .$defaultFn(() => false)
     .notNull(),
-  image: text("image"), // old Appwrite `avatar`
+  image: text("image"), // maps to legacy `avatar`
   createdAt: integer("created_at", { mode: "timestamp" })
     .$defaultFn(() => new Date())
     .notNull(),
@@ -90,7 +90,7 @@ export const files = sqliteTable("files", {
     .notNull(), // unix ms
 });
 
-// Replaces the Appwrite `users` array — correct + queryable share list.
+// Replaces the legacy `users` array — correct + queryable share list.
 export const fileShares = sqliteTable(
   "file_shares",
   {

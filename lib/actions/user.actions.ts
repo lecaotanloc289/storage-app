@@ -126,7 +126,7 @@ export const getCurrentUser = async () => {
     if (!session?.user) return null;
 
     const u = session.user;
-    // Map better-auth user → the Appwrite-shaped doc the UI depends on.
+    // Map better-auth user → the doc shape the UI depends on.
     return parseStringify({
       $id: u.id,
       accountId: u.id,

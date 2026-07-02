@@ -6,7 +6,7 @@ import { constructFileUrl } from "./utils";
 /**
  * Compatibility mapping layer (migration-plan §4).
  *
- * The frontend was written against Appwrite document shapes (`$id`,
+ * The frontend was written against legacy document shapes (`$id`,
  * `$createdAt`, `$updatedAt`, a populated `owner` object, `bucketFileId`,
  * `users[]`). Rather than rewrite every component, the actions layer maps D1
  * rows back onto that shape via these helpers.
@@ -37,7 +37,7 @@ export const toOwnerDoc = (u: User): OwnerDoc => ({
 });
 
 /**
- * Map a better-auth `user` row onto the Appwrite-shaped user doc used across
+ * Map a better-auth `user` row onto the legacy-shaped user doc used across
  * the app (`$id`, `accountId`, `fullName`, `email`, `avatar`). Mirrors the
  * mapping already done inline in `getCurrentUser`.
  */
@@ -50,7 +50,7 @@ export const toUserDoc = (u: User) => ({
 });
 
 /**
- * Map a `files` row onto the Appwrite-shaped file document the UI expects.
+ * Map a `files` row onto the legacy-shaped file document the UI expects.
  *
  * @param row   the D1 files row
  * @param owner populated owner user row (→ owner object) — omit to fall back to

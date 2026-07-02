@@ -70,7 +70,7 @@ declare interface ThumbnailProps {
 }
 
 declare interface ShareInputProps {
-  file: Models.Document;
+  file: FileDocument;
   onInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onRemove: (email: string) => void;
 }
@@ -88,7 +88,7 @@ declare interface FileDocument {
   $createdAt: string; // ISO date string
   $updatedAt: string; // ISO date string
 
-  // Legacy Appwrite system fields — kept optional so old component
+  // Legacy system fields — kept optional so old component
   // destructuring still type-checks; unused after the D1 migration.
   $databaseId?: string;
   $collectionId?: string;

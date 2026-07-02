@@ -59,9 +59,6 @@ importers:
       next-themes:
         specifier: ^0.4.6
         version: 0.4.6(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
-      node-appwrite:
-        specifier: ^21.0.0
-        version: 21.0.0
       react:
         specifier: 19.2.0
         version: 19.2.0
@@ -3967,16 +3964,10 @@ packages:
       sass:
         optional: true
 
-  node-appwrite@21.0.0:
-    resolution: {integrity: sha512-n5DzqL6QKIvo6mLXA0fRv1K/YmBdrk9a7DJtCO+YdpVCVq3buFpcgwaYfPYtsdlgfXpdFwD6ejV0bMER3+f1nA==}
-
   node-domexception@1.0.0:
     resolution: {integrity: sha512-/jKZoMpw0F8GRwl4/eLROPA3cfcXtLApP0QzLmUT/HuPCZWyB7IY9ZrMeKw2O/nFIqPQB3PVM9aYm0F312AXDQ==}
     engines: {node: '>=10.5.0'}
     deprecated: Use your platform's native DOMException instead
-
-  node-fetch-native-with-agent@1.7.2:
-    resolution: {integrity: sha512-5MaOOCuJEvcckoz7/tjdx1M6OusOY6Xc5f459IaruGStWnKzlI1qpNgaAwmn4LmFYcsSlj+jBMk84wmmRxfk5g==}
 
   node-fetch@2.7.0:
     resolution: {integrity: sha512-c4FRfUm/dbcWZ7U+1Wq0AwCyFL+3nt2bEw05wfxSz+DWpWsitgmSgYmy2dQdWyKC1694ELPqMs/YzUSNozLt8A==}
@@ -8697,13 +8688,7 @@ snapshots:
       - '@babel/core'
       - babel-plugin-macros
 
-  node-appwrite@21.0.0:
-    dependencies:
-      node-fetch-native-with-agent: 1.7.2
-
   node-domexception@1.0.0: {}
-
-  node-fetch-native-with-agent@1.7.2: {}
 
   node-fetch@2.7.0:
     dependencies:
