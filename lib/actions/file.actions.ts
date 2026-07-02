@@ -1,12 +1,14 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 "use server";
 
-import { InputFile } from "node-appwrite/file";
-import { createAdminClient, createSessionClient } from "../appwrite";
-import { appwriteConfig } from "../appwrite/config";
-import { ID, Models, Query } from "node-appwrite";
-import { constructFileUrl, getFileType, parseStringify } from "../utils";
+import { and, asc, desc, eq, inArray, like, or } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+
+import { getDb } from "../db";
+import { files, fileShares, user } from "../db/schema";
+import type { FileRow, User } from "../db/schema";
+import { toFileDoc } from "../mappers";
+import { deleteObject, putFile } from "../storage";
+import { getFileType, parseStringify } from "../utils";
 import { getCurrentUser } from "./user.actions";
 
 const handleError = (error: unknown, message: string) => {
@@ -17,80 +19,57 @@ const handleError = (error: unknown, message: string) => {
 export const uploadFile = async ({
   file,
   ownerId,
-  accountId,
   path,
 }: UploadFileProps) => {
-  const { storage, database } = await createAdminClient();
-  try {
-    const inputFile = InputFile.fromBuffer(file, file.name);
-    const bucketFile = await storage.createFile(
-      appwriteConfig.storage,
-      ID.unique(),
-      inputFile,
-    );
+  const db = getDb();
+  const { type, extension } = getFileType(file.name);
+  const r2Key = `${ownerId}/${crypto.randomUUID()}/${file.name}`;
 
-    const fileDocument = {
-      type: getFileType(bucketFile.name).type,
-      name: bucketFile.name,
-      url: constructFileUrl(bucketFile.$id),
-      extension: getFileType(bucketFile.name).extension,
-      size: bucketFile.sizeOriginal,
-      owner: ownerId,
+  try {
+    // 1. Write bytes to R2 first so we never persist a row without an object.
+    await putFile(r2Key, await file.arrayBuffer(), file.type);
+
+    const now = new Date();
+    const row: FileRow = {
+      id: crypto.randomUUID(),
+      name: file.name,
+      type,
+      extension,
+      size: file.size,
+      r2Key,
       ownerId,
-      accountId,
-      users: [],
-      bucketFileId: bucketFile.$id,
+      createdAt: now,
+      updatedAt: now,
     };
 
-    const newFile = await database
-      .createDocument(
-        appwriteConfig.database,
-        appwriteConfig.file_collection,
-        ID.unique(),
-        fileDocument,
-      )
-      .catch(async (error: unknown) => {
-        await storage.deleteFile(appwriteConfig.storage, bucketFile.$id);
-        handleError(error, "Failed to create file document");
-      });
+    try {
+      await db.insert(files).values(row);
+    } catch (dbError) {
+      // Roll back the orphaned R2 object if the DB insert fails.
+      await deleteObject(r2Key).catch(() => {});
+      throw dbError;
+    }
 
-    // “Hãy xóa cache của route này, lần request tiếp theo phải chạy lại Server Component”
-    // Upload sảy ra ở server, không có router ở đây
-    // Không gọi next không biết có dữ liệu mới để get lại.
-    // Upload xong dữ liệu ≠ UI biết dữ liệu mới → Phải nói cho Next.js biết cache đã “hết hạn”
     revalidatePath(path);
-
-    return parseStringify(newFile);
+    return parseStringify(toFileDoc(row));
   } catch (error) {
     handleError(error, "Failed to upload file");
   }
 };
 
-const createQueries = (
-  currentUser: Models.Document,
-  types: string[],
-  searchText: string,
-  sort: string,
-  limit?: number,
-) => {
-  const queries = [
-    Query.or([
-      Query.equal("ownerId", currentUser.$id),
-      Query.contains("users", currentUser?.email),
-    ]),
-  ];
-  // TODO: Search, sort, limits ...
-  if (types.length > 0) queries.push(Query.equal("type", types));
-  if (searchText) queries.push(Query.contains("name", searchText));
-  if (limit) queries.push(Query.limit(limit));
-
-  if (sort) {
-    const [sortBy, orderBy] = sort.split("-");
-    queries.push(
-      orderBy === "asc" ? Query.orderAsc(sortBy) : Query.orderDesc(sortBy),
-    );
+/** Map a sort field from the UI (`$createdAt-desc`, `name-asc`, …) to a column. */
+const sortColumn = (sortBy: string) => {
+  switch (sortBy) {
+    case "$updatedAt":
+      return files.updatedAt;
+    case "name":
+      return files.name;
+    case "size":
+      return files.size;
+    case "$createdAt":
+    default:
+      return files.createdAt;
   }
-  return queries;
 };
 
 export const getFiles = async ({
@@ -99,51 +78,67 @@ export const getFiles = async ({
   sort = "$createdAt-desc",
   limit,
 }: GetFilesProps) => {
-  const { database } = await createAdminClient();
+  const db = getDb();
 
   try {
     const currentUser = await getCurrentUser();
     if (!currentUser) {
       throw new Error("User not found");
     }
-    const queries = createQueries(currentUser, types, searchText, sort, limit);
-    const files = await database.listDocuments(
-      appwriteConfig.database,
-      appwriteConfig.file_collection,
-      queries,
-    );
-    // Get ownerIds
-    const ownerIds = [...new Set(files.documents.map((f) => f.owner))];
-    let usersRes;
-    let usersMap: any;
-    if (ownerIds.length > 0) {
-      usersRes = await database.listDocuments(
-        appwriteConfig.database,
-        appwriteConfig.user_collection,
-        [Query.equal("$id", ownerIds)],
-      );
-      usersMap = Object.fromEntries(
-        usersRes!.documents.map((u) => [
-          u.$id,
-          {
-            id: u.$id,
-            fullName: u.fullName,
-            email: u.email,
-            avatar: u.avatar,
-          },
-        ]),
-      );
+
+    // owner OR shared-via-file_shares (migration-plan §4).
+    const sharedFileIds = db
+      .select({ id: fileShares.fileId })
+      .from(fileShares)
+      .where(eq(fileShares.email, currentUser.email));
+
+    const conditions = [
+      or(eq(files.ownerId, currentUser.$id), inArray(files.id, sharedFileIds)),
+    ];
+    if (types.length > 0) conditions.push(inArray(files.type, types));
+    if (searchText) conditions.push(like(files.name, `%${searchText}%`));
+
+    const [sortBy, orderBy] = sort.split("-");
+    const orderExpr =
+      orderBy === "asc" ? asc(sortColumn(sortBy)) : desc(sortColumn(sortBy));
+
+    const baseQuery = db
+      .select()
+      .from(files)
+      .where(and(...conditions))
+      .orderBy(orderExpr);
+
+    const rows = limit ? await baseQuery.limit(limit) : await baseQuery;
+
+    // Batch-fetch owner users so each doc carries a populated `owner` object.
+    const ownerIds = [...new Set(rows.map((r) => r.ownerId))];
+    const ownerRows: User[] =
+      ownerIds.length > 0
+        ? await db.select().from(user).where(inArray(user.id, ownerIds))
+        : [];
+    const ownerMap = new Map(ownerRows.map((u) => [u.id, u]));
+
+    // Batch-fetch shared emails for the returned files.
+    const fileIds = rows.map((r) => r.id);
+    const shareRows =
+      fileIds.length > 0
+        ? await db
+            .select()
+            .from(fileShares)
+            .where(inArray(fileShares.fileId, fileIds))
+        : [];
+    const sharesMap = new Map<string, string[]>();
+    for (const s of shareRows) {
+      const list = sharesMap.get(s.fileId) ?? [];
+      list.push(s.email);
+      sharesMap.set(s.fileId, list);
     }
 
-    const documents = files.documents.map((f) => ({
-      ...f,
-      owner: usersMap[f.ownerId] || null,
-    }));
+    const documents = rows.map((r) =>
+      toFileDoc(r, ownerMap.get(r.ownerId) ?? null, sharesMap.get(r.id) ?? []),
+    );
 
-    return parseStringify({
-      ...files,
-      documents,
-    });
+    return parseStringify({ documents, total: documents.length });
   } catch (error) {
     handleError(error, "Failed to get files");
   }
@@ -155,17 +150,17 @@ export const renameFile = async ({
   extension,
   path,
 }: RenameFileProps) => {
-  const { database } = await createAdminClient();
+  const db = getDb();
   try {
     const newName = `${name}.${extension}`;
-    const updatedFile = await database.updateDocument(
-      appwriteConfig.database,
-      appwriteConfig.file_collection,
-      fileId,
-      { name: newName },
-    );
+    const updated = await db
+      .update(files)
+      .set({ name: newName, updatedAt: new Date() })
+      .where(eq(files.id, fileId))
+      .returning();
+
     revalidatePath(path);
-    return parseStringify(updatedFile);
+    return parseStringify(toFileDoc(updated[0]));
   } catch (error) {
     handleError(error, "Failed to rename file");
   }
@@ -176,16 +171,21 @@ export const updateFileUsers = async ({
   emails,
   path,
 }: UpdateFileUsersProps) => {
-  const { database } = await createAdminClient();
+  const db = getDb();
   try {
-    const updatedFile = await database.updateDocument(
-      appwriteConfig.database,
-      appwriteConfig.file_collection,
-      fileId,
-      { users: emails },
-    );
+    // Replace the share list: drop existing rows, insert the new emails.
+    await db.delete(fileShares).where(eq(fileShares.fileId, fileId));
+
+    const cleaned = [...new Set(emails.map((e) => e.trim()).filter(Boolean))];
+    if (cleaned.length > 0) {
+      await db
+        .insert(fileShares)
+        .values(cleaned.map((email) => ({ fileId, email })));
+    }
+
+    const rows = await db.select().from(files).where(eq(files.id, fileId));
     revalidatePath(path);
-    return parseStringify(updatedFile);
+    return parseStringify(toFileDoc(rows[0], null, cleaned));
   } catch (error) {
     handleError(error, "Failed to share file");
   }
@@ -196,16 +196,12 @@ export const deleteFile = async ({
   bucketFileId,
   path,
 }: DeleteFileProps) => {
-  const { database, storage } = await createAdminClient();
+  const db = getDb();
   try {
-    const deleteFile = await database.deleteDocument(
-      appwriteConfig.database,
-      appwriteConfig.file_collection,
-      fileId,
-    );
-    if (deleteFile) {
-      await storage.deleteFile(appwriteConfig.storage, bucketFileId);
-    }
+    // Cascade (file_shares.file_id ON DELETE CASCADE) removes the share rows.
+    await db.delete(files).where(eq(files.id, fileId));
+    await deleteObject(bucketFileId);
+
     revalidatePath(path);
     return parseStringify({ status: "Success" });
   } catch (error) {
@@ -215,16 +211,15 @@ export const deleteFile = async ({
 
 // ============================== TOTAL FILE SPACE USED
 export async function getTotalSpaceUsed() {
+  const db = getDb();
   try {
-    const { database } = await createSessionClient();
     const currentUser = await getCurrentUser();
     if (!currentUser) throw new Error("User is not authenticated.");
 
-    const files = await database.listDocuments(
-      appwriteConfig.database,
-      appwriteConfig.file_collection,
-      [Query.equal("owner", [currentUser.$id])],
-    );
+    const rows = await db
+      .select()
+      .from(files)
+      .where(eq(files.ownerId, currentUser.$id));
 
     const totalSpace = {
       image: { size: 0, latestDate: "" },
@@ -236,16 +231,19 @@ export async function getTotalSpaceUsed() {
       all: 2 * 1024 * 1024 * 1024 /* 2GB available bucket storage */,
     };
 
-    files.documents.forEach((file) => {
+    rows.forEach((file) => {
       const fileType = file.type as FileType;
-      totalSpace[fileType].size += file.size;
+      const bucket = totalSpace[fileType] ?? totalSpace.other;
+      const updatedAt = new Date(file.updatedAt).toISOString();
+
+      bucket.size += file.size;
       totalSpace.used += file.size;
 
       if (
-        !totalSpace[fileType].latestDate ||
-        new Date(file.$updatedAt) > new Date(totalSpace[fileType].latestDate)
+        !bucket.latestDate ||
+        new Date(updatedAt) > new Date(bucket.latestDate)
       ) {
-        totalSpace[fileType].latestDate = file.$updatedAt;
+        bucket.latestDate = updatedAt;
       }
     });
 

@@ -75,22 +75,34 @@ declare interface ShareInputProps {
   onRemove: (email: string) => void;
 }
 
+declare interface FileOwnerDoc {
+  id: string;
+  $id: string;
+  fullName: string;
+  email: string;
+  avatar: string;
+}
+
 declare interface FileDocument {
   $id: string;
-  $databaseId: string;
-  $collectionId: string;
   $createdAt: string; // ISO date string
   $updatedAt: string; // ISO date string
-  $permissions: string[];
-  $sequence: number;
 
-  accountId: string;
+  // Legacy Appwrite system fields — kept optional so old component
+  // destructuring still type-checks; unused after the D1 migration.
+  $databaseId?: string;
+  $collectionId?: string;
+  $permissions?: string[];
+  $sequence?: number;
+
+  accountId?: string;
   bucketFileId: string;
   extension: string;
   name: string;
-  owner: string;
+  owner: FileOwnerDoc; // populated owner object (see lib/mappers.toFileDoc)
+  ownerId?: string;
   size: number;
   type: "document" | "image" | "video" | "audio" | string;
   url: string;
-  users?: string[]; // vì hiện tại bạn để trống
+  users?: string[];
 }
